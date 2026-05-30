@@ -1,0 +1,6 @@
+.terraform/
+*.exe
+*.tfstate
+*.tfstate.backup
+terraform.tfvars
+node_modules/

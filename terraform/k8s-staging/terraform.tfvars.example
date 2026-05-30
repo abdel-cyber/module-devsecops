@@ -1,0 +1,16 @@
+# Configuration Terraform pour déploiement Kubernetes Staging
+# =============================================================
+# Copiez ce fichier en terraform.tfvars et ajustez les valeurs
+
+# Chemin vers le kubeconfig (contexte staging)
+kubeconfig_path = "~/.kube/config"
+
+# Image Docker à déployer
+docker_image = "registry.gitlab.com/abdelmouiz99/tp-devsecops-app"
+docker_tag   = "latest"  # Sera remplacé par $CI_COMMIT_SHORT_SHA dans le pipeline
+
+# Credentials GitLab Container Registry
+registry_url      = "registry.gitlab.com"
+registry_user     = "abdelmouiz99"
+registry_password = "VOTRE_DEPLOY_TOKEN"  # Créez un Deploy Token dans GitLab
+registry_email    = "ci@gitlab.com"

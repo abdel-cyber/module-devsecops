@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: devsecops-app
+  namespace: tp-devsecops-production
+  labels:
+    app: devsecops-app
+    environment: production
+spec:
+  replicas: 3  # 3 pods pour haute disponibilité en production
+  selector:
+    matchLabels:
+      app: devsecops-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Zéro downtime en production
+  template:
+    metadata:
+      labels:
+        app: devsecops-app
+        environment: production
+    spec:
+      containers:
+      - name: devsecops-app
+        image: registry.gitlab.com/abdelmouiz99/tp-devsecops-app:latest
+        ports:
+        - containerPort: 3000
+          name: http
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+      imagePullSecrets:
+      - name: gitlab-registry-secret

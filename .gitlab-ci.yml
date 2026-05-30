@@ -1,0 +1,159 @@
+# ========== Pipeline GitLab CI/CD DevSecOps ==========
+# Chaîne complète : test → security → build → deploy_staging → deploy_production
+# L'image est construite et poussée vers GitLab Container Registry,
+# puis déployée sur AWS (staging) et Azure (production).
+
+# ========== Stages (ordre d'exécution) ==========
+stages:
+  - test
+  - security
+  - build
+  - deploy_staging
+  - deploy_production
+
+variables:
+  NODE_VERSION: "20"
+  # Variables automatiques GitLab pour le Container Registry :
+  # CI_REGISTRY : URL du registry (ex: registry.gitlab.com)
+  # CI_REGISTRY_IMAGE : URL complète de l'image (ex: registry.gitlab.com/groupe/tp-devsecops-app)
+  # CI_REGISTRY_USER : Utilisateur pour l'authentification
+  # CI_REGISTRY_PASSWORD : Token d'authentification
+  # CI_COMMIT_SHORT_SHA : Hash court du commit (pour tagger l'image)
+
+# ========== Stage test : exécuter les tests Jest ==========
+test:
+  stage: test
+  image: node:${NODE_VERSION}-alpine
+  before_script:
+    - npm ci
+  script:
+    - npm test
+  # Ne s'exécute que sur les branches develop et main
+  only:
+    - develop
+    - main
+    - merge_requests
+
+# ========== Stage security : détection de secret exposé ==========
+security:
+  stage: security
+  image: alpine:latest
+  script:
+    - echo "========================================="
+    - echo "Scan de sécurité - Détection de secrets"
+    - echo "========================================="
+    - echo ""
+    - echo "Recherche de patterns de secrets dans les fichiers..."
+    - echo ""
+    - apk add --no-cache grep
+    - echo "Fichiers à scanner:"
+    - find . -name "*.js" -o -name "*.json" | grep -v node_modules | head -20
+    - echo ""
+    - echo "Recherche du pattern 'sk-' ..."
+    - |
+      RESULT=$(grep -r "sk-" --include="*.js" --include="*.json" . 2>/dev/null | grep -v node_modules || true)
+      if [ ! -z "$RESULT" ]; then
+        echo ""
+        echo "❌❌❌ ERREUR - SECRET DÉTECTÉ ❌❌❌"
+        echo ""
+        echo "$RESULT"
+        echo ""
+        echo "Les clés API (sk-...) ne doivent JAMAIS être dans le code source."
+        echo "Utilisez les variables d'environnement ou GitLab CI/CD Variables."
+        echo ""
+        exit 1
+      fi
+    - echo "✅ Aucun secret suspect détecté."
+
+# ========== Stage build : construction et publication de l'image Docker ==========
+build:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_DRIVER: overlay2
+  before_script:
+    - docker info
+    - echo "Connexion au GitLab Container Registry..."
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - echo "========================================="
+    - echo "   Build et Push de l'image Docker"
+    - echo "========================================="
+    - echo "Registry - $CI_REGISTRY"
+    - echo "Image - $CI_REGISTRY_IMAGE"
+    - echo "Tags - $CI_COMMIT_SHORT_SHA et latest"
+    - echo ""
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA -t $CI_REGISTRY_IMAGE:latest .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+    - docker push $CI_REGISTRY_IMAGE:latest
+    - echo ""
+    - echo "✅ Image publiée avec succès dans le Container Registry"
+    - echo "   - $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+    - echo "   - $CI_REGISTRY_IMAGE:latest"
+    - echo ""
+  only:
+    - develop
+    - main
+
+# ========== Deploy staging (Kubernetes Cluster 1 via Terraform) : manuel sur branche develop ==========
+deploy_staging:
+  stage: deploy_staging
+  image: alpine:latest
+  when: manual
+  allow_failure: true
+  before_script:
+    - apk add --no-cache bash curl wget unzip
+    - wget https://releases.hashicorp.com/terraform/1.7.4/terraform_1.7.4_linux_amd64.zip
+    - unzip -o terraform_1.7.4_linux_amd64.zip -d /tmp
+    - mv /tmp/terraform /usr/local/bin/
+    - terraform --version
+    - mkdir -p $HOME/.kube
+    - echo "$KUBE_CONFIG_STAGING" | base64 -d > $HOME/.kube/config
+    - export KUBECONFIG=$HOME/.kube/config
+  script:
+    - cd terraform/k8s-staging
+    - terraform init
+    - terraform plan -out=tfplan -var=kubeconfig_path=$KUBECONFIG -var=docker_image=$CI_REGISTRY_IMAGE -var=docker_tag=$CI_COMMIT_SHORT_SHA -var=registry_user=$CI_REGISTRY_USER -var=registry_password=$CI_REGISTRY_PASSWORD
+    - terraform apply -auto-approve tfplan
+    - terraform output -json
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+  environment:
+    name: staging
+  artifacts:
+    paths:
+      - terraform/k8s-staging/tfplan
+    expire_in: 1 hour
+
+# ========== Deploy production (Kubernetes Cluster 2 via Terraform) : manuel (gate) sur branche main ==========
+deploy_production:
+  stage: deploy_production
+  image: alpine:latest
+  when: manual
+  allow_failure: true
+  before_script:
+    - apk add --no-cache bash curl wget unzip
+    - wget https://releases.hashicorp.com/terraform/1.7.4/terraform_1.7.4_linux_amd64.zip
+    - unzip -o terraform_1.7.4_linux_amd64.zip -d /tmp
+    - mv /tmp/terraform /usr/local/bin/
+    - terraform --version
+    - mkdir -p $HOME/.kube
+    - echo "$KUBE_CONFIG_PRODUCTION" | base64 -d > $HOME/.kube/config
+    - export KUBECONFIG=$HOME/.kube/config
+  script:
+    - cd terraform/k8s-production
+    - terraform init
+    - terraform plan -out=tfplan -var=kubeconfig_path=$KUBECONFIG -var=docker_image=$CI_REGISTRY_IMAGE -var=docker_tag=latest -var=registry_user=$CI_REGISTRY_USER -var=registry_password=$CI_REGISTRY_PASSWORD
+    - terraform apply -auto-approve tfplan
+    - terraform output -json
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+  environment:
+    name: production
+  artifacts:
+    paths:
+      - terraform/k8s-production/tfplan
+    expire_in: 1 hour

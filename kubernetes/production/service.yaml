@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: devsecops-app-service
+  namespace: tp-devsecops-production
+  labels:
+    app: devsecops-app
+    environment: production
+spec:
+  type: LoadBalancer  # LoadBalancer pour accès externe en production
+  selector:
+    app: devsecops-app
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 3000
+  sessionAffinity: ClientIP

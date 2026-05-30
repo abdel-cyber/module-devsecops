@@ -1,0 +1,6 @@
+aws_region    = "eu-west-1"
+instance_type = "t2.micro"
+docker_image  = "registry.gitlab.com/VOTRE_GROUPE/tp-devsecops-app"
+docker_tag    = "latest"
+registry_url  = "registry.gitlab.com"
+# registry_user et registry_password : ne pas commiter ; utiliser tfvars ou variables d'environnement TF_VAR_*

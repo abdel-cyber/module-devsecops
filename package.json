@@ -1,0 +1,24 @@
+{
+    "name": "tp-devsecops-app",
+    "version": "1.0.0",
+    "description": "Application DevSecOps - TP Node.js avec CI/CD GitLab et déploiement multi-cloud",
+    "main": "src/server.js",
+    "scripts": {
+        "start": "node src/server.js",
+        "test": "jest"
+    },
+    "keywords": ["devsecops", "nodejs", "express", "docker"],
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "express": "^4.18.2"
+    },
+    "devDependencies": {
+        "jest": "^29.7.0",
+        "supertest": "^6.3.3"
+    },
+    "jest": {
+        "testMatch": ["**/__tests__/**/*.test.js"],
+        "testEnvironment": "node"
+    }
+}
